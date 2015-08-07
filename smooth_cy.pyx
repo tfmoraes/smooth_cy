@@ -15,7 +15,7 @@ ctypedef np.float64_t DTYPEF64_t
 
 @cython.boundscheck(False) # turn of bounds-checking for entire function
 @cython.cdivision(True)
-cdef inline DTYPE8_t GS(DTYPE8_t[:, :, :] I, int z, int y, int x) nogil:
+cdef inline DTYPEF64_t GS(DTYPEF64_t[:, :, :] I, int z, int y, int x) nogil:
     cdef int dz = I.shape[0]
     cdef int dy = I.shape[1]
     cdef int dx = I.shape[2]
@@ -58,7 +58,7 @@ cdef void perim(DTYPE8_t[:, :, :] image,
 
 @cython.boundscheck(False) # turn of bounds-checking for entire function
 @cython.cdivision(True)
-cdef DTYPEF64_t calculate_H(DTYPE8_t[:, :, :] I, int z, int y, int x) nogil:
+cdef DTYPEF64_t calculate_H(DTYPEF64_t[:, :, :] I, int z, int y, int x) nogil:
     # double fx, fy, fz, fxx, fyy, fzz, fxy, fxz, fyz, H
     cdef DTYPEF64_t fx, fy, fz, fxx, fyy, fzz, fxy, fxz, fyz, H
     # int h, k, l
@@ -207,7 +207,7 @@ def smooth(np.ndarray[DTYPE8_t, ndim=3] image,
     cdef int dx = image.shape[2]
 
     S = 0
-    for z in prange(dz, nogil=True):
+    for z in xrange(dz):
         for y in xrange(dy):
             for x in xrange(dx):
                 if image[z, y, x]:
@@ -222,7 +222,7 @@ def smooth(np.ndarray[DTYPE8_t, ndim=3] image,
         replicate(out, aux);
         diff = 0.0;
 
-        for z in prange(dz, nogil=True):
+        for z in xrange(dz):
             for y in xrange(dy):
                 for x in xrange(dx):
                     if mask[z, y, x]:
@@ -243,7 +243,7 @@ def smooth(np.ndarray[DTYPE8_t, ndim=3] image,
                         diff += (out[z, y, x] - aux[z, y, x])*(out[z, y, x] - aux[z, y, x])
 
         cn = sqrt((1.0/S) * diff);
-        print "CN: %.28f - diff: %.28f\n" % (cn, diff)
+        print "CN: %.28f - diff: %.28f - %d\n" % (cn, diff, S)
 
         if cn <= E:
             break;
