@@ -13,10 +13,12 @@ def vti_to_nparray(fname):
 
     o = r.GetOutput()
     x, y, z = o.GetDimensions()
-    
+
     m = numpy_support.vtk_to_numpy(o.GetPointData().GetScalars())
     m.shape = (z, y, x)
-    m[:] = (m > 0) * 1
+
+    t = (m.max() + m.min())/2.0
+    m[:] = (m > t) * 1
     
     return m, o.GetSpacing()
 
@@ -60,7 +62,9 @@ def main():
     img = ((img > 0) * 255).astype('uint8')
     print img.sum()
     out_img = np.zeros_like(img, dtype='float64')
-    smooth_cy.smooth(img, 10, out_img)
+    iteractions = int(sys.argv[3])
+    bsize = int(sys.argv[4])
+    smooth_cy.smooth(img, iteractions, bsize, out_img)
     vtk_img = to_vtk(out_img, out_img.shape, spacing)
     save_to_vti(vtk_img, sys.argv[2])
 
