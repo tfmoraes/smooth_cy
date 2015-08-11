@@ -64,7 +64,7 @@ def main():
     out_img = np.zeros_like(img, dtype='float64')
     iteractions = int(sys.argv[3])
     bsize = int(sys.argv[4])
-    smooth_cy.smooth(img, iteractions, bsize, out_img)
+    smooth_cy.smooth(img, spacing, iteractions, bsize, out_img)
     vtk_img = to_vtk(out_img, out_img.shape, spacing)
     save_to_vti(vtk_img, sys.argv[2])
 

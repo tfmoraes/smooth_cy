@@ -58,7 +58,7 @@ cdef void perim(DTYPE8_t[:, :, :] image,
 
 @cython.boundscheck(False) # turn of bounds-checking for entire function
 @cython.cdivision(True)
-cdef DTYPEF64_t calculate_H(DTYPEF64_t[:, :, :] I, int z, int y, int x) nogil:
+cdef DTYPEF64_t calculate_H(DTYPEF64_t[:, :, :] I, int z, int y, int x, float sz, float sy, float sx) nogil:
     # double fx, fy, fz, fxx, fyy, fzz, fxy, fxz, fyz, H
     cdef DTYPEF64_t fx, fy, fz, fxx, fyy, fzz, fxy, fxz, fyz, H
     # int h, k, l
@@ -66,23 +66,23 @@ cdef DTYPEF64_t calculate_H(DTYPEF64_t[:, :, :] I, int z, int y, int x) nogil:
     cdef int k = 1
     cdef int l = 1
 
-    fx = (GS(I, z, y, x + h) - GS(I, z, y, x - h)) / (2.0*h)
-    fy = (GS(I, z, y + k, x) - GS(I, z, y - k, x)) / (2.0*k)
-    fz = (GS(I, z + l, y, x) - GS(I, z - l, y, x)) / (2.0*l)
+    fx = (GS(I, z, y, x + h) - GS(I, z, y, x - h)) / (2.0*sx)
+    fy = (GS(I, z, y + k, x) - GS(I, z, y - k, x)) / (2.0*sy)
+    fz = (GS(I, z + l, y, x) - GS(I, z - l, y, x)) / (2.0*sz)
 
-    fxx = (GS(I, z, y, x + h) - 2*GS(I, z, y, x) + GS(I, z, y, x - h)) / (h*h)
-    fyy = (GS(I, z, y + k, x) - 2*GS(I, z, y, x) + GS(I, z, y - k, x)) / (k*k)
-    fzz = (GS(I, z + l, y, x) - 2*GS(I, z, y, x) + GS(I, z - l, y, x)) / (l*l)
+    fxx = (GS(I, z, y, x + h) - 2*GS(I, z, y, x) + GS(I, z, y, x - h)) / (sx*sx)
+    fyy = (GS(I, z, y + k, x) - 2*GS(I, z, y, x) + GS(I, z, y - k, x)) / (sy*sy)
+    fzz = (GS(I, z + l, y, x) - 2*GS(I, z, y, x) + GS(I, z - l, y, x)) / (sz*sz)
 
     fxy = (GS(I, z, y + k, x + h) - GS(I, z, y - k, x + h) \
             - GS(I, z, y + k, x - h) + GS(I, z, y - k, x - h)) \
-            / (4.0*h*k)
+            / (4.0*sx*sy)
     fxz = (GS(I, z + l, y, x + h) - GS(I, z + l, y, x - h) \
             - GS(I, z - l, y, x + h) + GS(I, z - l, y, x - h)) \
-            / (4.0*h*l)
+            / (4.0*sx*sz)
     fyz = (GS(I, z + l, y + k, x) - GS(I, z + l, y - k, x) \
             - GS(I, z - l, y + k, x) + GS(I, z - l, y - k, x)) \
-            / (4.0*k*l)
+            / (4.0*sy*sz)
 
     if fx*fx + fy*fy + fz*fz > 0:
         H = ((fy*fy + fz*fz)*fxx + (fx*fx + fz*fz)*fyy \
@@ -95,6 +95,8 @@ cdef DTYPEF64_t calculate_H(DTYPEF64_t[:, :, :] I, int z, int y, int x) nogil:
     return H
 
 
+@cython.boundscheck(False) # turn of bounds-checking for entire function
+@cython.cdivision(True)
 cdef void replicate(DTYPEF64_t[:, :, :] source, DTYPEF64_t[:, :, :] dest) nogil:
     cdef int dz = source.shape[0]
     cdef int dy = source.shape[1]
@@ -109,6 +111,7 @@ cdef void replicate(DTYPEF64_t[:, :, :] source, DTYPEF64_t[:, :, :] dest) nogil:
 @cython.boundscheck(False) # turn of bounds-checking for entire function
 @cython.cdivision(True)
 def smooth(np.ndarray[DTYPE8_t, ndim=3] image,
+           tuple spacing,
            int n, int bsize,
            np.ndarray[DTYPEF64_t,  ndim=3] out):
 
@@ -121,6 +124,10 @@ def smooth(np.ndarray[DTYPE8_t, ndim=3] image,
     cdef DTYPEF64_t diff=0.0
     cdef DTYPEF64_t dt=1/6.0
 
+    cdef float sx = spacing[0]
+    cdef float sy = spacing[1]
+    cdef float sz = spacing[2]
+
     cdef DTYPEF64_t E = 0.00001
 
     _mask[:] = image
@@ -129,9 +136,13 @@ def smooth(np.ndarray[DTYPE8_t, ndim=3] image,
         _mask[:] = mask
         print i
 
+    del _mask
+
     cdef int dz = image.shape[0]
     cdef int dy = image.shape[1]
     cdef int dx = image.shape[2]
+
+    print image.min(), image.max()
 
     S = 0
     for z in prange(dz, nogil=True):
@@ -153,9 +164,10 @@ def smooth(np.ndarray[DTYPE8_t, ndim=3] image,
             for y in xrange(dy):
                 for x in xrange(dx):
                     if mask[z, y, x]:
-                        H = calculate_H(aux, z, y, x);
+                        H = calculate_H(aux, z, y, x, sz, sy, sx);
                         v = aux[z, y, x] + dt*H;
 
+                        out[z, y, x] = v
                         if image[z, y, x]:
                             if v > 0:
                                 out[z, y, x] = v
