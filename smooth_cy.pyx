@@ -95,6 +95,8 @@ cdef DTYPEF64_t calculate_H(DTYPEF64_t[:, :, :] I, int z, int y, int x) nogil:
     return H
 
 
+@cython.boundscheck(False) # turn of bounds-checking for entire function
+@cython.cdivision(True)
 cdef void replicate(DTYPEF64_t[:, :, :] source, DTYPEF64_t[:, :, :] dest) nogil:
     cdef int dz = source.shape[0]
     cdef int dy = source.shape[1]
@@ -121,13 +123,17 @@ def smooth(np.ndarray[DTYPE8_t, ndim=3] image,
     cdef DTYPEF64_t diff=0.0
     cdef DTYPEF64_t dt=1/6.0
 
-    cdef DTYPEF64_t E = 0.00001
+    cdef DTYPEF64_t E = 0.001
 
     _mask[:] = image
     for i in xrange(bsize):
         perim(_mask, mask)
         _mask[:] = mask
         print i
+
+    # out[:] = mask
+
+    del _mask
 
     cdef int dz = image.shape[0]
     cdef int dy = image.shape[1]
@@ -160,12 +166,12 @@ def smooth(np.ndarray[DTYPE8_t, ndim=3] image,
                             if v > 0:
                                 out[z, y, x] = v
                             else:
-                                out[z, y, x] = 0.0
+                                out[z, y, x] = 0.0001
                         else:
                             if v < 0:
                                 out[z, y, x] = v
                             else:
-                                out[z, y, x] = 0.0
+                                out[z, y, x] = -0.0001
 
                         diff += (out[z, y, x] - aux[z, y, x])*(out[z, y, x] - aux[z, y, x])
 
