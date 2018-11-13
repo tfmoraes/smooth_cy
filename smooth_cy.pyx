@@ -3,6 +3,7 @@ cimport numpy as np
 cimport cython
 
 from libc.math cimport floor, ceil, sqrt, fabs, round
+from libc.string cimport memcpy
 from cython.parallel import prange
 
 DTYPE8 = np.uint8
@@ -65,6 +66,7 @@ cdef DTYPEF64_t calculate_H(DTYPEF64_t[:, :, :] I, int z, int y, int x) nogil:
     cdef int h = 1
     cdef int k = 1
     cdef int l = 1
+    cdef DTYPEF64_t divisor
 
     fx = (GS(I, z, y, x + h) - GS(I, z, y, x - h)) / (2.0*h)
     fy = (GS(I, z, y + k, x) - GS(I, z, y - k, x)) / (2.0*k)
@@ -84,14 +86,11 @@ cdef DTYPEF64_t calculate_H(DTYPEF64_t[:, :, :] I, int z, int y, int x) nogil:
             - GS(I, z - l, y + k, x) + GS(I, z - l, y - k, x)) \
             / (4.0*k*l)
 
-    if fx*fx + fy*fy + fz*fz > 0:
-        H = ((fy*fy + fz*fz)*fxx + (fx*fx + fz*fz)*fyy \
-                + (fx*fx + fy*fy)*fzz - 2*(fx*fy*fxy \
-                + fx*fz*fxz + fy*fz*fyz)) \
-                / (fx*fx + fy*fy + fz*fz)
-    else:
-        H = 0.0
+    divisor = fx*fx + fy*fy + fz*fz
+    if divisor == 0:
+        divisor = 0.000001
 
+    H = ((fy*fy + fz*fz)*fxx + (fx*fx + fz*fz)*fyy + (fx*fx + fy*fy)*fzz - 2*(fx*fy*fxy  + fx*fz*fxz + fy*fz*fyz)) / (divisor)
     return H
 
 
@@ -112,11 +111,12 @@ cdef void replicate(DTYPEF64_t[:, :, :] source, DTYPEF64_t[:, :, :] dest) nogil:
 @cython.cdivision(True)
 def smooth(np.ndarray[DTYPE8_t, ndim=3] image,
            int n, int bsize,
+           tuple spacing,
            np.ndarray[DTYPEF64_t,  ndim=3] out):
 
-    cdef np.ndarray[DTYPE8_t, ndim=3] mask = np.zeros_like(image)
-    cdef np.ndarray[DTYPE8_t, ndim=3] _mask = np.zeros_like(image)
-    cdef np.ndarray[DTYPEF64_t, ndim=3] aux = np.zeros_like(out)
+    cdef DTYPE8_t[:, :, :] mask = np.zeros_like(image)
+    cdef DTYPE8_t[:, :, :] _mask = np.zeros_like(image)
+    cdef DTYPEF64_t[:, :, :] aux = np.zeros_like(out)
 
     cdef int i, x, y, z, S;
     cdef DTYPEF64_t H, v, cn
@@ -125,19 +125,25 @@ def smooth(np.ndarray[DTYPE8_t, ndim=3] image,
 
     cdef DTYPEF64_t E = 0.001
 
-    _mask[:] = image
-    for i in xrange(bsize):
-        perim(_mask, mask)
-        _mask[:] = mask
-        print i
-
-    # out[:] = mask
-
-    del _mask
-
     cdef int dz = image.shape[0]
     cdef int dy = image.shape[1]
     cdef int dx = image.shape[2]
+
+    cdef DTYPEF64_t sx = spacing[0]
+    cdef DTYPEF64_t sy = spacing[1]
+    cdef DTYPEF64_t sz = spacing[2]
+
+    #  _mask[:] = image
+    memcpy(&_mask[0, 0, 0], &image[0, 0, 0], dz*dy*dx)
+    for i in xrange(bsize):
+        perim(_mask, mask)
+        _mask[:] = mask
+        memcpy(&_mask[0, 0, 0], &mask[0, 0, 0], dz*dy*dx)
+        print i
+
+    #  out[:] = mask
+    del _mask
+
 
     S = 0
     for z in prange(dz, nogil=True):
@@ -152,10 +158,12 @@ def smooth(np.ndarray[DTYPE8_t, ndim=3] image,
                     S += 1
 
     for i in xrange(n):
-        replicate(out, aux);
+        #  replicate(out, aux);
+        memcpy(&aux[0, 0, 0], &out[0, 0, 0], dz*dy*dx*sizeof(DTYPEF64_t))
         diff = 0.0;
+        print("Step", i)
 
-        for z in xrange(dz):
+        for z in prange(dz, nogil=True):
             for y in xrange(dy):
                 for x in xrange(dx):
                     if mask[z, y, x]:
@@ -166,17 +174,17 @@ def smooth(np.ndarray[DTYPE8_t, ndim=3] image,
                             if v > 0:
                                 out[z, y, x] = v
                             else:
-                                out[z, y, x] = 0.0001
+                                out[z, y, x] = 0.0
                         else:
                             if v < 0:
                                 out[z, y, x] = v
                             else:
-                                out[z, y, x] = -0.0001
+                                out[z, y, x] = 0.0
 
-                        diff += (out[z, y, x] - aux[z, y, x])*(out[z, y, x] - aux[z, y, x])
+                        #  diff += (out[z, y, x] - aux[z, y, x])*(out[z, y, x] - aux[z, y, x])
 
-        cn = sqrt((1.0/S) * diff);
-        print "%d - CN: %.28f - diff: %.28f\n" % (i, cn, diff)
+        #  cn = sqrt((1.0/S) * diff);
+        #  print "%d - CN: %.28f - diff: %.28f\n" % (i, cn, diff)
 
-        if cn <= E:
-            break;
+        #  if cn <= E:
+            #  break;

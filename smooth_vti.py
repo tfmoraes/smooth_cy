@@ -19,8 +19,13 @@ def vti_to_nparray(fname):
 
     t = (m.max() + m.min())/2.0
     m[:] = (m > t) * 1
-    
-    return m, o.GetSpacing()
+
+    new_m = np.zeros(shape=(z+2, y+2, x+2))
+    new_m[:] = -0.1
+
+    new_m[1:-1, 1:-1, 1:-1] = m
+
+    return new_m, o.GetSpacing()
 
 
 def to_vtk(n_array, dim, spacing=(1,1,1)):
@@ -35,11 +40,11 @@ def to_vtk(n_array, dim, spacing=(1,1,1)):
     image.SetDimensions(dx, dy, dz)
     image.SetOrigin(0, 0, 0)
     image.SetSpacing(spacing)
-    image.SetNumberOfScalarComponents(1)
+    #  image.SetNumberOfScalarComponents(1)
     image.SetExtent(0, dx -1, 0, dy -1, 0, dz - 1)
     # getattr(image, NUMPY_TO_VTK_TYPE[n_array.dtype.name])()
-    image.SetScalarType(numpy_support.get_vtk_array_type(n_array.dtype))
-    image.AllocateScalars()
+    #  image.SetScalarType(numpy_support.get_vtk_array_type(n_array.dtype))
+    image.AllocateScalars(numpy_support.get_vtk_array_type(n_array.dtype), 1)
     image.GetPointData().SetScalars(v_image)
 
     n_array.shape = dz,dy,dx
@@ -50,7 +55,7 @@ def to_vtk(n_array, dim, spacing=(1,1,1)):
 def save_to_vti(imagedata, file_output):
     print "Saving"
     w = vtk.vtkXMLImageDataWriter()
-    w.SetInput(imagedata)
+    w.SetInputData(imagedata)
     w.SetFileName(file_output)
     w.Write()
     print "Saved"
@@ -64,7 +69,7 @@ def main():
     out_img = np.zeros_like(img, dtype='float64')
     iteractions = int(sys.argv[3])
     bsize = int(sys.argv[4])
-    smooth_cy.smooth(img, iteractions, bsize, out_img)
+    smooth_cy.smooth(img, iteractions, bsize, spacing, out_img)
     vtk_img = to_vtk(out_img, out_img.shape, spacing)
     save_to_vti(vtk_img, sys.argv[2])
 
