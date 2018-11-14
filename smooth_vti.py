@@ -53,19 +53,19 @@ def to_vtk(n_array, dim, spacing=(1,1,1)):
 
 
 def save_to_vti(imagedata, file_output):
-    print "Saving"
+    print("Saving")
     w = vtk.vtkXMLImageDataWriter()
     w.SetInputData(imagedata)
     w.SetFileName(file_output)
     w.Write()
-    print "Saved"
+    print("Saved")
 
 
 def main():
     img, spacing = vti_to_nparray(sys.argv[1])
-    print img.sum()
+    print(img.sum())
     img = ((img > 0) * 255).astype('uint8')
-    print img.sum()
+    print(img.sum())
     out_img = np.zeros_like(img, dtype='float64')
     iteractions = int(sys.argv[3])
     bsize = int(sys.argv[4])
