@@ -2,38 +2,35 @@ import numpy as np
 cimport numpy as np
 cimport cython
 
-from libc.math cimport floor, ceil, sqrt, fabs, round
+from libc.math cimport floor, ceil, sqrt, fabs, round, fmin, fmax
 from libc.string cimport memcpy
 from cython.parallel import prange
 
-DTYPE8 = np.uint8
-ctypedef np.uint8_t DTYPE8_t
 
-DTYPEF64 = np.float64
-ctypedef np.float64_t DTYPEF64_t
+ctypedef np.float32_t IMAGEF_t
+IMAGEF = np.float32
 
+ctypedef fused image_t:
+    np.uint8_t
+    np.int16_t
+    IMAGEF_t
 
 
 @cython.boundscheck(False) # turn of bounds-checking for entire function
 @cython.cdivision(True)
-cdef inline DTYPEF64_t GS(DTYPEF64_t[:, :, :] I, int z, int y, int x) nogil:
+cdef inline image_t GS(image_t[:, :, :] I, int z, int y, int x) nogil:
     cdef int dz = I.shape[0]
     cdef int dy = I.shape[1]
     cdef int dx = I.shape[2]
 
-    if 0 <= x < dx \
-            and 0 <= y < dy \
-            and 0 <= z < dz:
-        return I[z, y, x]
-    else:
-        return 0
+    return I[z%dz, y%dy, x%dx]
 
 
 
 @cython.boundscheck(False) # turn of bounds-checking for entire function
 @cython.cdivision(True)
-cdef void perim(DTYPE8_t[:, :, :] image,
-                DTYPE8_t[:, :, :] out) nogil:
+cdef void perim(np.uint8_t[:, :, :] image,
+                np.uint8_t[:, :, :] out) nogil:
 
     cdef int dz = image.shape[0]
     cdef int dy = image.shape[1]
@@ -48,10 +45,7 @@ cdef void perim(DTYPE8_t[:, :, :] image,
                 for z_ in xrange(z-1, z+2, 2):
                     for y_ in xrange(y-1, y+2, 2):
                         for x_ in xrange(x-1, x+2, 2):
-                            if 0 <= x_ < dx \
-                                    and 0 <= y_ < dy \
-                                    and 0 <= z_ < dz \
-                                    and image[z, y, x] != image[z_, y_, x_]:
+                            if GS(image, z, y, x) != GS(image, z_, y_, x_):
                                 out[z, y, x] = 1
                                 break
 
@@ -59,14 +53,14 @@ cdef void perim(DTYPE8_t[:, :, :] image,
 
 @cython.boundscheck(False) # turn of bounds-checking for entire function
 @cython.cdivision(True)
-cdef DTYPEF64_t calculate_H(DTYPEF64_t[:, :, :] I, int z, int y, int x) nogil:
+cdef IMAGEF_t calculate_H(IMAGEF_t[:, :, :] I, int z, int y, int x) nogil:
     # double fx, fy, fz, fxx, fyy, fzz, fxy, fxz, fyz, H
-    cdef DTYPEF64_t fx, fy, fz, fxx, fyy, fzz, fxy, fxz, fyz, H
+    cdef IMAGEF_t fx, fy, fz, fxx, fyy, fzz, fxy, fxz, fyz, H
     # int h, k, l
     cdef int h = 1
     cdef int k = 1
     cdef int l = 1
-    cdef DTYPEF64_t divisor
+    cdef IMAGEF_t divisor
 
     fx = (GS(I, z, y, x + h) - GS(I, z, y, x - h)) / (2.0*h)
     fy = (GS(I, z, y + k, x) - GS(I, z, y - k, x)) / (2.0*k)
@@ -96,7 +90,7 @@ cdef DTYPEF64_t calculate_H(DTYPEF64_t[:, :, :] I, int z, int y, int x) nogil:
 
 @cython.boundscheck(False) # turn of bounds-checking for entire function
 @cython.cdivision(True)
-cdef void replicate(DTYPEF64_t[:, :, :] source, DTYPEF64_t[:, :, :] dest) nogil:
+cdef void replicate(IMAGEF_t[:, :, :] source, IMAGEF_t[:, :, :] dest) nogil:
     cdef int dz = source.shape[0]
     cdef int dy = source.shape[1]
     cdef int dx = source.shape[2]
@@ -109,35 +103,35 @@ cdef void replicate(DTYPEF64_t[:, :, :] source, DTYPEF64_t[:, :, :] dest) nogil:
 
 @cython.boundscheck(False) # turn of bounds-checking for entire function
 @cython.cdivision(True)
-def smooth(np.ndarray[DTYPE8_t, ndim=3] image,
+def smooth(np.ndarray[np.uint8_t, ndim=3] image,
            int n, int bsize,
-           tuple spacing,
-           np.ndarray[DTYPEF64_t,  ndim=3] out):
+           tuple spacing):
 
-    cdef DTYPE8_t[:, :, :] mask = np.zeros_like(image)
-    cdef DTYPE8_t[:, :, :] _mask = np.zeros_like(image)
-    cdef DTYPEF64_t[:, :, :] aux = np.zeros_like(out)
+    cdef np.uint8_t[:, :, :] mask = np.zeros_like(image)
+    cdef np.uint8_t[:, :, :] _mask = np.zeros_like(image)
+    cdef IMAGEF_t[:, :, :] out = np.zeros_like(image, dtype=IMAGEF)
+    cdef IMAGEF_t[:, :, :] aux = np.zeros_like(out)
 
     cdef int i, x, y, z, S;
-    cdef DTYPEF64_t H, v, cn
-    cdef DTYPEF64_t diff=0.0
-    cdef DTYPEF64_t dt=1/6.0
+    cdef IMAGEF_t H, v, cn
+    cdef IMAGEF_t diff=0.0
+    cdef IMAGEF_t dt=1/6.0
 
-    cdef DTYPEF64_t E = 0.001
+    cdef IMAGEF_t E = 0.002
 
     cdef int dz = image.shape[0]
     cdef int dy = image.shape[1]
     cdef int dx = image.shape[2]
 
-    cdef DTYPEF64_t sx = spacing[0]
-    cdef DTYPEF64_t sy = spacing[1]
-    cdef DTYPEF64_t sz = spacing[2]
+    cdef IMAGEF_t sx = spacing[0]
+    cdef IMAGEF_t sy = spacing[1]
+    cdef IMAGEF_t sz = spacing[2]
 
     #  _mask[:] = image
     memcpy(&_mask[0, 0, 0], &image[0, 0, 0], dz*dy*dx)
     for i in xrange(bsize):
         perim(_mask, mask)
-        _mask[:] = mask
+        #  _mask[:] = mask
         memcpy(&_mask[0, 0, 0], &mask[0, 0, 0], dz*dy*dx)
         print i
 
@@ -159,9 +153,8 @@ def smooth(np.ndarray[DTYPE8_t, ndim=3] image,
 
     for i in xrange(n):
         #  replicate(out, aux);
-        memcpy(&aux[0, 0, 0], &out[0, 0, 0], dz*dy*dx*sizeof(DTYPEF64_t))
+        memcpy(&aux[0, 0, 0], &out[0, 0, 0], dz*dy*dx*sizeof(IMAGEF_t))
         diff = 0.0;
-        print("Step", i)
 
         for z in prange(dz, nogil=True):
             for y in xrange(dy):
@@ -171,20 +164,16 @@ def smooth(np.ndarray[DTYPE8_t, ndim=3] image,
                         v = aux[z, y, x] + dt*H;
 
                         if image[z, y, x]:
-                            if v > 0:
-                                out[z, y, x] = v
-                            else:
-                                out[z, y, x] = 0.0
+                            out[z, y, x] = fmax(v, 0.0)
                         else:
-                            if v < 0:
-                                out[z, y, x] = v
-                            else:
-                                out[z, y, x] = 0.0
+                            out[z, y, x] = fmin(v, 0.0)
 
-                        #  diff += (out[z, y, x] - aux[z, y, x])*(out[z, y, x] - aux[z, y, x])
+                        diff += (out[z, y, x] - aux[z, y, x])*(out[z, y, x] - aux[z, y, x])
 
-        #  cn = sqrt((1.0/S) * diff);
-        #  print "%d - CN: %.28f - diff: %.28f\n" % (i, cn, diff)
+        cn = sqrt((1.0/S) * diff)
+        print "%d - CN: %.28f - diff: %.28f - S=%d\n" % (i, cn, diff, S)
 
-        #  if cn <= E:
-            #  break;
+        if cn <= E:
+            break
+
+    return out

@@ -66,10 +66,9 @@ def main():
     print(img.sum())
     img = ((img > 0) * 255).astype('uint8')
     print(img.sum())
-    out_img = np.zeros_like(img, dtype='float64')
     iteractions = int(sys.argv[3])
     bsize = int(sys.argv[4])
-    smooth_cy.smooth(img, iteractions, bsize, spacing, out_img)
+    out_img = np.asarray(smooth_cy.smooth(img, iteractions, bsize, spacing))
     vtk_img = to_vtk(out_img, out_img.shape, spacing)
     save_to_vti(vtk_img, sys.argv[2])
 
